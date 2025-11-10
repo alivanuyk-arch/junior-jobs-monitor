@@ -1,18 +1,26 @@
-import asyncio
 import requests
 import json
 import feedparser
-import re
 import os
-from telegram import Bot
-from dotenv import load_dotenv
+import asyncio
+from datetime import datetime
 
-load_dotenv()
+# ==================== КОНФИГУРАЦИЯ ====================
+TELEGRAM_TOKEN = "8285832122:AAE0BdJxpF3kigE3Ljnj0DbWmDbVjFeQcKs"
+CHAT_ID = "7745305298"
 
-TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('CHAT_ID')
+RSS_SOURCES = {
+    'habr': 'https://habr.com/ru/rss/all/all/?fl=ru',
+    'vc_ru': 'https://vc.ru/rss', 
+}
 
-# ==================== ВАКАНСИИ ====================
+RELEVANT_KEYWORDS = [
+    'python', 'junior', 'джуниор', 'собеседование', 'карьера',
+    'работа', 'IT', 'разработчик', 'программист', 'начинающий'
+]
+
+# ==================== ОБЩИЕ ФУНКЦИИ ====================
+
 def get_vacancies():
     """Парсим вакансии с HH.ru"""
     try:
@@ -52,17 +60,6 @@ def save_vacancies(junior_vacancies):
     with open('old_vacancies.json', 'w') as f:
         json.dump(junior_vacancies, f)
     return new_vacancies
-
-# ==================== НОВОСТИ ====================
-RSS_SOURCES = {
-    'habr': 'https://habr.com/ru/rss/all/all/?fl=ru',
-    'vc_ru': 'https://vc.ru/rss', 
-}
-
-RELEVANT_KEYWORDS = [
-    'python', 'junior', 'джуниор', 'собеседование', 'карьера',
-    'работа', 'IT', 'разработчик', 'программист', 'начинающий'
-]
 
 def get_news():
     """Парсим новости"""
@@ -116,11 +113,6 @@ def get_news():
     
     return all_new_articles
 
-# ==================== TELEGRAM ====================
-async def send_telegram_message(text):
-    bot = Bot(token=TELEGRAM_TOKEN)
-    await bot.send_message(chat_id=CHAT_ID, text=text)
-
 def format_digest(vacancies, news):
     """Форматируем дайджест"""
     message = "📊 ЕЖЕДНЕВНЫЙ ДАЙДЖЕСТ ДЛЯ ДЖУНОВ\n\n"
@@ -139,32 +131,126 @@ def format_digest(vacancies, news):
     message += "Удачи в поисках! 💪"
     return message
 
-# ==================== ГЛАВНАЯ ФУНКЦИЯ ====================
-async def main():
-    """Запускаем весь пайплайн"""
-    print("🚀 Запуск парсера...")
+# ==================== РЕЖИМ 1: СЕРВЕРНАЯ ВЕРСИЯ ====================
+
+async def send_telegram_message(text):
+    """Отправка сообщения в Telegram"""
+    from telegram import Bot
+    bot = Bot(token=TELEGRAM_TOKEN)
+    await bot.send_message(chat_id=CHAT_ID, text=text)
+
+def vacancies_etl():
+    """ETL для вакансий"""
+    print("🔄 Вакансии: начинаем ETL...")
+    raw_data = get_vacancies()
+    if not raw_data:
+        print("❌ Не удалось получить данные вакансий")
+        return []
     
-    # 1. Вакансии
-    vacancies_data = get_vacancies()
-    if vacancies_data:
-        filtered_vacancies = filter_vacancies(vacancies_data)
-        new_vacancies = save_vacancies(filtered_vacancies)
-        print(f"✅ Вакансии: {len(new_vacancies)} новых")
-    else:
-        new_vacancies = []
-    
-    # 2. Новости
+    clean_data = filter_vacancies(raw_data)
+    new_vacancies = save_vacancies(clean_data)
+    print(f"✅ Вакансии: {len(new_vacancies)} новых")
+    return new_vacancies
+
+def news_etl():
+    """ETL для новостей"""
+    print("📰 Новости: начинаем ETL...")
     new_news = get_news()
     print(f"✅ Новости: {len(new_news)} новых")
+    return new_news
+
+async def main():
+    """Основная функция для серверного запуска"""
+    print("🚀 ЗАПУСК НА СЕРВЕРЕ (без Airflow)")
     
-    # 3. Отправляем в Telegram
-    if new_vacancies or new_news:
-        message = format_digest(new_vacancies, new_news)
+    # Запускаем ETL процессы
+    vacancies = vacancies_etl()
+    news = news_etl()
+    
+    # Отправляем дайджест
+    if vacancies or news:
+        message = format_digest(vacancies, news)
         await send_telegram_message(message)
-        print("✅ Дайджест отправлен в Telegram!")
+        print("✅ Дайджест отправлен в Telegram")
     else:
         await send_telegram_message("📭 Сегодня нет новых вакансий и новостей")
         print("📭 Ничего нового")
 
+# ==================== РЕЖИМ 2: AIRFLOW DAG ====================
+"""
+# РАЗКОММЕНТИРОВАТЬ ДЛЯ AIRFLOW:
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from airflow.models import Variable
+
+# Конфиги через Airflow Variables (рекомендуется для продакшена)
+# TELEGRAM_TOKEN = Variable.get("telegram_token")
+# CHAT_ID = Variable.get("chat_id")
+
+def airflow_vacancies_etl():
+    # Обертка для Airflow
+    return vacancies_etl()
+
+def airflow_news_etl():
+    return news_etl()
+
+def airflow_send_digest(**context):
+    # Логика с XCom для Airflow
+    ti = context['ti']
+    vacancies = ti.xcom_pull(task_ids='vacancies_etl') or []
+    news = ti.xcom_pull(task_ids='news_etl') or []
+    
+    # Формируем и отправляем сообщение
+    if vacancies or news:
+        message = format_digest(vacancies, news)
+        # В реальном Airflow используйте Telegram Hook или отдельный оператор
+        print(f"📤 Отправка в Telegram: {len(vacancies)} вакансий, {len(news)} новостей")
+        # Реальная отправка: await send_telegram_message(message)
+    else:
+        print("📭 Ничего нового для отправки")
+
+# Определение DAG
+with DAG(
+    'daily_jobs_pipeline',
+    description='Production ETL pipeline for junior jobs monitoring',
+    schedule_interval='@daily',
+    start_date=datetime(2024, 1, 1),
+    catchup=False,
+    tags=['jobs', 'monitoring', 'etl']
+) as dag:
+    
+    vacancies_task = PythonOperator(
+        task_id='vacancies_etl',
+        python_callable=airflow_vacancies_etl
+    )
+    
+    news_task = PythonOperator(
+        task_id='news_etl',
+        python_callable=airflow_news_etl
+    )
+    
+    telegram_task = PythonOperator(
+        task_id='send_telegram_digest',
+        python_callable=airflow_send_digest,
+        provide_context=True
+    )
+    
+    # Определяем порядок выполнения
+    vacancies_task >> news_task >> telegram_task
+
+"""
+
+# ==================== ЗАПУСК ====================
+
 if __name__ == "__main__":
-    asyncio.run(main())
+    # Автоматическое определение режима
+    try:
+        # Пробуем импортировать Airflow
+        from airflow import DAG
+        print("✅ Режим: Airflow DAG (раскомментируйте блок выше)")
+        # DAG будет загружен при импорте, если раскомментирован
+    except ImportError:
+        print("✅ Режим: Серверный запуск")
+        # Запускаем серверную версию
+        asyncio.run(main())

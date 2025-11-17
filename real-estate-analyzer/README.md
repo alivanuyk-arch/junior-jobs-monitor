@@ -16,8 +16,8 @@
 
 ## 📁 Структура проекта
 real-estate-analyzer/
+├── DATA/ # Данные для анализа
 ├── avito_parser.py # Основной скрипт парсера
-├── sample-html/ # Примеры HTML страниц для тестирования
 ├── requirements.txt # Зависимости Python
 └── README.md # Документация
 

@@ -15,12 +15,12 @@
 - **CSV** - экспорт результатов
 
 ## 📁 Структура проекта
-real-estate-analyzer/
-├── DATA/ # Данные для анализа
-├── avito_parser.py # Основной скрипт парсера
-├── requirements.txt # Зависимости Python
-└── README.md # Документация
 
+**real-estate-analyzer/**
+- 📁 `DATA/` - данные для анализа
+- 📄 `avito_parser.py` - основной скрипт парсера
+- 📄 `requirements.txt` - зависимости Python  
+- 📄 `README.md` - документация
 text
 
 ## 🚀 Быстрый старт

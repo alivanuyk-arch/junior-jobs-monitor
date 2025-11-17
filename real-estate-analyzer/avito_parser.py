@@ -1,6 +1,7 @@
 from bs4 import BeautifulSoup
 import re
 import pandas as pd
+import os
 
 def extract_price(text):
     """Ищем число ЛЮБОГО формата перед ₽"""
@@ -34,12 +35,15 @@ def parse_avito_file(file_path):
         print(f"Ошибка: {e}")
         return []
 
-# Обрабатываем ВСЕ файлы
+# Обрабатываем ВСЕ файлы из папки DATA
 all_prices = []
 for i in range(1, 11):
-    file_path = f"E:/pars_avito/saved_avito{i}.html"
-    prices = parse_avito_file(file_path)
-    all_prices.extend(prices)
+    file_path = f"DATA/saved_avito{i}.html" 
+    if os.path.exists(file_path): 
+        prices = parse_avito_file(file_path)
+        all_prices.extend(prices)
+    else:
+        print(f"⚠️ Файл {file_path} не найден")
 
 # Статистика
 if all_prices:

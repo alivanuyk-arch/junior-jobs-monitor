@@ -6,7 +6,7 @@ import json
 
 def airflow_vacancies_etl():
     """Задача ETL для вакансий"""
-    # Здесь будет вызов функций из junior_jobs_monitor.py
+    # Здесь будет вызов функций из main.py.py
     print("Airflow: Запуск ETL вакансий")
     return []
 
